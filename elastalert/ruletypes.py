@@ -12,6 +12,7 @@ from util import lookup_es_key
 from util import pretty_ts
 from util import ts_now
 from util import ts_to_dt
+from util import actual_event_count
 
 
 class RuleType(object):
@@ -26,6 +27,7 @@ class RuleType(object):
         self.matches = []
         self.rules = rules
         self.occurrences = {}
+        self.is_agg_rule = 'aggs' in rules and len(rules['aggs']) > 0
 
     def add_data(self, data):
         """ The function that the elastalert client calls with results from ES.
@@ -69,6 +71,13 @@ class RuleType(object):
         """ Gets called when a rule has use_count_query set to True. Called to add data from querying to the rule.
 
         :param counts: A dictionary mapping timestamps to hit counts.
+        """
+        raise NotImplementedError()
+
+    def add_aggregation_data(self, aggs_data):
+        """ Gets called when a rule has aggs field. Called to add data from querying to the rule.
+
+        :param aggs_data: A dictionary contains aggregation data.
         """
         raise NotImplementedError()
 
@@ -179,6 +188,11 @@ class FrequencyRule(RuleType):
             self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
             self.check_for_match('all')
 
+    def add_aggregation_data(self, aggs_data):
+        event = ({self.ts_field: aggs_data['end_time']}, aggs_data['agg_num'])
+        self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
+        self.check_for_match('all')
+
     def add_terms_data(self, terms):
         for timestamp, buckets in terms.iteritems():
             for bucket in buckets:
@@ -206,11 +220,17 @@ class FrequencyRule(RuleType):
             self.check_for_match(key)
 
     def check_for_match(self, key):
+        if self.is_agg_rule:
+            count = self.occurrences[key].count() / actual_event_count(self.occurrences[key])
+        else:
+            count = self.occurrences[key].count()
+
         # Match if, after removing old events, we hit num_events
-        if self.occurrences[key].count() >= self.rules['num_events']:
+        if count >= self.rules['num_events']:
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
+            event['count'] = count
             self.add_match(event)
             self.occurrences.pop(key)
 
@@ -226,7 +246,8 @@ class FrequencyRule(RuleType):
         lt = self.rules.get('use_local_time')
         starttime = pretty_ts(dt_to_ts(ts_to_dt(match[self.ts_field]) - self.rules['timeframe']), lt)
         endtime = pretty_ts(match[self.ts_field], lt)
-        message = 'At least %d events occurred between %s and %s\n\n' % (self.rules['num_events'],
+        message = 'At least %d(%d) events occurred between %s and %s\n\n' % (self.rules['num_events'],
+                                                                         match['count'],
                                                                          starttime,
                                                                          endtime)
         return message
@@ -347,6 +368,9 @@ class SpikeRule(RuleType):
                     qk = 'other'
             self.handle_event(event, 1, qk)
 
+    def add_aggregation_data(self, aggs_data):
+        self.handle_event({self.ts_field: aggs_data['end_time']}, aggs_data['agg_num'], 'all')
+
     def clear_windows(self, qk, event):
         # Reset the state and prevent alerts until windows filled again
         self.cur_windows[qk].clear()
@@ -376,19 +400,27 @@ class SpikeRule(RuleType):
         else:
             self.ref_window_filled_once = True
 
-        if self.find_matches(self.ref_windows[qk].count(), self.cur_windows[qk].count()):
+        if self.is_agg_rule:
+            ref_count = self.ref_windows[qk].count()/actual_event_count(self.ref_windows[qk].data)
+            cur_count = self.cur_windows[qk].count()/actual_event_count(self.cur_windows[qk].data)
+        else:
+            ref_count = self.ref_windows[qk].count()
+            cur_count = self.cur_windows[qk].count()
+
+        elastalert_logger.info("ref_count: %s, ref: %s" % (ref_count, self.ref_windows[qk].data))
+        elastalert_logger.info("cur_count: %s, cur: %s" % (cur_count, self.cur_windows[qk].data))
+
+        if self.find_matches(ref_count, cur_count):
             # skip over placeholder events which have count=0
             for match, count in self.cur_windows[qk].data:
                 if count:
                     break
 
-            self.add_match(match, qk)
+            self.add_match(match, qk, cur_count, ref_count)
             self.clear_windows(qk, match)
 
-    def add_match(self, match, qk):
+    def add_match(self, match, qk, spike_count, reference_count):
         extra_info = {}
-        spike_count = self.cur_windows[qk].count()
-        reference_count = self.ref_windows[qk].count()
         extra_info = {'spike_count': spike_count,
                       'reference_count': reference_count}
 
@@ -403,7 +435,6 @@ class SpikeRule(RuleType):
         if (cur < self.rules.get('threshold_cur', 0) or
                 ref < self.rules.get('threshold_ref', 0)):
             return False
-
         spike_up, spike_down = False, False
         if cur <= ref / self.rules['spike_height']:
             spike_down = True

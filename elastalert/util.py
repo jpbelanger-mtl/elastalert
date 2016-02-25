@@ -180,3 +180,11 @@ def cronite_datetime_to_timestamp(self, d):
         d = d.replace(tzinfo=None) - d.utcoffset()
 
     return total_seconds((d - datetime.datetime(1970, 1, 1)))
+
+
+def actual_event_count(data_list):
+    count = 0
+    for event in data_list:
+        if event[1] > 0:
+            count += 1
+    return count
