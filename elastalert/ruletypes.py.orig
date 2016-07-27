@@ -30,9 +30,12 @@ class RuleType(object):
         self.matches = []
         self.rules = rules
         self.occurrences = {}
+<<<<<<< HEAD
         self.rules['owner'] = self.rules.get('owner', '')
         self.rules['priority'] = self.rules.get('priority', '2')
+=======
         self.is_agg_rule = 'aggs' in rules and len(rules['aggs']) > 0
+>>>>>>> errordaiwa/feature/elasticsearch_aggregations_query_support
 
     def add_data(self, data):
         """ The function that the elastalert client calls with results from ES.
@@ -250,10 +253,17 @@ class FrequencyRule(RuleType):
 
     def get_match_str(self, match):
         lt = self.rules.get('use_local_time')
+<<<<<<< HEAD
         match_ts = lookup_es_key(match, self.ts_field)
         starttime = pretty_ts(dt_to_ts(ts_to_dt(match_ts) - self.rules['timeframe']), lt)
+        endtime = pretty_ts(match_ts, lt)
+        message = 'At least %d events occurred between %s and %s\n\n' % (self.rules['num_events'],
+=======
+        starttime = pretty_ts(dt_to_ts(ts_to_dt(match[self.ts_field]) - self.rules['timeframe']), lt)
+        endtime = pretty_ts(match[self.ts_field], lt)
         message = 'At least %d(%d) events occurred between %s and %s\n\n' % (self.rules['num_events'],
                                                                          match['count'],
+>>>>>>> errordaiwa/feature/elasticsearch_aggregations_query_support
                                                                          starttime,
                                                                          endtime)
         return message

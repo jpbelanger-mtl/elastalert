@@ -240,9 +240,16 @@ def cronite_datetime_to_timestamp(self, d):
     return total_seconds((d - datetime.datetime(1970, 1, 1)))
 
 
+<<<<<<< HEAD
+def add_raw_postfix(field):
+    if not field.endswith('.raw'):
+        field += '.raw'
+    return field
+=======
 def actual_event_count(data_list):
     count = 0
     for event in data_list:
         if event[1] > 0:
             count += 1
     return count
+>>>>>>> errordaiwa/feature/elasticsearch_aggregations_query_support
