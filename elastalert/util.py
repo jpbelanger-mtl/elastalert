@@ -145,6 +145,8 @@ def dt_to_ts_with_format(dt, ts_format):
 def ts_now():
     return datetime.datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
 
+def ts_to_startday(timestamp):
+    return datetime.datetime(timestamp.year, timestamp.month, timestamp.day, 0, 0, 0, 0)
 
 def inc_ts(timestamp, milliseconds=1):
     """Increment a timestamp by milliseconds."""
@@ -239,6 +241,10 @@ def cronite_datetime_to_timestamp(self, d):
 
     return total_seconds((d - datetime.datetime(1970, 1, 1)))
 
+def add_raw_postfix(field):
+    if not field.endswith('.raw'):
+        field += '.raw'
+    return field
 
 def actual_event_count(data_list):
     count = 0

@@ -16,6 +16,10 @@ from util import pretty_ts
 from util import ts_now
 from util import ts_to_dt
 from util import actual_event_count
+from util import cronite_datetime_to_timestamp
+from util import unix_to_dt
+
+from croniter import croniter
 
 
 class RuleType(object):
@@ -131,6 +135,25 @@ class WhitelistRule(CompareRule):
             return True
         return False
 
+class AggregationValueRangeRule(CompareRule):
+    """ A CompareRule where the compare function checks a given term against a range of values (min, max) """
+    required_options = frozenset(['ignore_null'])
+    aggregation_num = {}
+
+    def compare(self, event):
+        elastalert_logger.info("Comparing value: %s with max: %s, min: %s", self.aggregation_num['agg_num'], self.rules.get('maxvalue'), self.rules.get('minvalue'))
+        if self.aggregation_num['agg_num'] is None:
+            return not self.rules['ignore_null']
+        if not 'minvalue' in self.rules:
+            return not self.aggregation_num['agg_num'] <= self.rules['maxvalue']
+        if not 'maxvalue' in self.rules:
+            return not self.rules['minvalue'] <= self.aggregation_num['agg_num']
+        return not self.rules['minvalue'] <= self.aggregation_num['agg_num'] <= self.rules['maxvalue']
+
+    def add_aggregation_data(self, aggs_data):
+        self.aggregation_num = aggs_data
+        if self.compare(aggs_data):
+            self.add_match(aggs_data)
 
 class ChangeRule(CompareRule):
     """ A rule that will store values for a certain term and match if those values change """

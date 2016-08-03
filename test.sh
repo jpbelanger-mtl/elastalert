@@ -1,0 +1,11 @@
+echo ""
+curl -XGET "http://jenkins-slave-gatling.appdirectondemand.com:9200/elastalert_status/_search" -d '{"query": {"filtered": {"filter": {"bool": {"must": [{"range": {"@timestamp": {"gt": "2016-08-03T00:00:00Z", "lte": "2016-08-04T00:00:00Z"}}}, {"query": {"match": {"alert_sent": {"query": "true", "type": "phrase"}}}}, {"query": {"match": {"rule_name": {"query": "Developer edit profile - Developer save product profile", "type": "phrase"}}}}]}}}}, "size": "1"}'
+
+#curl -XGET "http://jenkins-slave-gatling.appdirectondemand.com:9200/elastalert_status/_search" -d '{"query": {"query_string": {"query": "alert_info.type: slack"}}}'
+#curl -XGET "http://jenkins-slave-gatling.appdirectondemand.com:9200/elastalert_status/_search" -d '{"query": {"filtered": {"filter": {"bool": {"must": [{"query": {"match": {"alert_sent": {"query": "true", "type": "phrase"}}}}, {"query": {"match": {"rule_name": {"query": "Developer edit profile - Developer save product profile", "type": "phrase"}}}}]}}}}, "aggs": {"aggregation": {"percentiles": {"field": "responseDuration", "percents": [70]}}}, "size": "0"}'
+echo ""
+#curl -XGET "http://jenkins-slave-gatling.appdirectondemand.com:9200/gatling-2016.07.29/_search" -d '{"query": {"filtered": {"filter": {"bool": {"must": [{"range": {"@timestamp": {"gt": "2016-07-29T15:20:51.690329Z", "lte": "2016-07-29T15:25:18.320499Z"}}}, {"query": {"match": {"name": {"query": "Developer save product profile", "type": "phrase"}}}}, {"query": {"match": {"scenario_name": {"query": "Developer edit profile", "type": "phrase"}}}}]}}}}, "aggs": {"aggregation": {"percentiles": {"field": "responseDuration", "percents": [70]}}}, "size": "0"}'
+
+
+echo ""
+#curl -XGET "http://jenkins-slave-gatling.appdirectondemand.com:9200/gatling-2016.07.29/_search" -d '{"query": {"filtered": {"filter": {"bool": {"must": [{"query": {"match": {"name": {"query": "Developer save product profile", "type": "phrase"}}}}, {"query": {"match": {"scenario_name": {"query": "Developer edit profile", "type": "phrase"}}}}]}}}}, "aggs": {"aggregation": {"percentiles": {"field": "responseDuration", "percents": [70]}}}, "size": "0"}'

@@ -37,6 +37,7 @@ rules_mapping = {
     'spike': ruletypes.SpikeRule,
     'blacklist': ruletypes.BlacklistRule,
     'whitelist': ruletypes.WhitelistRule,
+    'aggvaluerange': ruletypes.AggregationValueRangeRule,
     'change': ruletypes.ChangeRule,
     'flatline': ruletypes.FlatlineRule,
     'new_term': ruletypes.NewTermsRule,

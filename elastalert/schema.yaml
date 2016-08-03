@@ -49,6 +49,15 @@ oneOf:
       whitelist: {type: array, items: {type: string}}
       ignore_null: {type: boolean}
 
+  - title: AggregationValueRange
+    properties:
+      type: {enum: [aggvaluerange]}
+      minvalue: {type: integer}
+      ignore_null: {type: boolean}
+      maxvalue: {type: integer}
+      ignore_null: {type: boolean}
+      daily: {type: boolean}
+
   - title: Change
     required: [query_key, compare_key, ignore_null]
     properties:
@@ -134,6 +143,7 @@ properties:
   aggregation: *timeframe
   realert: *timeframe
   exponential_realert: *timeframe
+  limit_tstamp_with_index: {type: boolean}
 
   buffer_time: *timeframe
   query_delay: *timeframe

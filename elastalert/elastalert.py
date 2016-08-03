@@ -8,6 +8,8 @@ import signal
 import sys
 import time
 import traceback
+import datetime
+import dateutil
 from email.mime.text import MIMEText
 from smtplib import SMTP
 from smtplib import SMTPException
@@ -41,6 +43,8 @@ from util import ts_add
 from util import ts_now
 from util import ts_to_dt
 from util import unix_to_dt
+from util import ts_to_startday
+
 
 
 class ElastAlerter():
@@ -202,7 +206,7 @@ class ElastAlerter():
             return index
 
     @staticmethod
-    def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False):
+    def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False, limit_tstamp_with_index=False):
         """ Returns a query dict that will apply a list of filters, filter by
         start and end time, and sort results by timestamp.
 
@@ -216,7 +220,7 @@ class ElastAlerter():
         endtime = to_ts_func(endtime)
         filters = copy.copy(filters)
         es_filters = {'filter': {'bool': {'must': filters}}}
-        if starttime and endtime:
+        if starttime and endtime and not limit_tstamp_with_index:
             es_filters['filter']['bool']['must'].insert(0, {'range': {timestamp_field: {'gt': starttime,
                                                                                         'lte': endtime}}})
         query = {'query': {'filtered': es_filters}}
@@ -240,8 +244,7 @@ class ElastAlerter():
         """
         if 'sort' in query:
             query.pop('sort')
-        query.update({'aggs': aggregation})
-        aggs_query = {'aggs': {'filtered': query}}
+        aggs_query = {'query': query['query'], 'aggs': aggregation, 'size': '0'}
         return aggs_query
 
     def get_index_start(self, index, timestamp_field='@timestamp'):
@@ -353,15 +356,26 @@ class ElastAlerter():
         :param endtime: The latest time to query.
         :return: An aggregation num.
         """
-        base_query = self.get_query(rule['filter'], starttime, endtime, timestamp_field=rule['timestamp_field'], to_ts_func=rule['dt_to_ts'])
+
+        #We don't want to send more than one alert per day, this will skip the matching and execution of the rule if it was already triggered today
+        if rule.get('daily'):
+            query = self.get_query_daily_sent(rule)
+            res = self.current_es.search(index=self.writeback_index, body=query)
+            elastalert_logger.info("Querying previous alert hits: %s", res['hits']['total'])
+            if res['hits']['total'] > 0:
+                elastalert_logger.info("Rule already triggered today, we skip")
+                return None
+
+        base_query = self.get_query(rule['filter'], starttime, endtime, timestamp_field=rule['timestamp_field'], to_ts_func=rule['dt_to_ts'], limit_tstamp_with_index=rule['limit_tstamp_with_index'])
         extra_args = {'_source_include': rule['include']}
         if not rule.get('_source_enabled'):
             base_query['fields'] = rule['include']
             extra_args = {}
         query = self.get_aggregation_query(base_query, rule['aggs']['aggs_form'])
+        elastalert_logger.info("Aggregation query: %s", query)
 
         try:
-            res = self.current_es.search(index=index, size=rule['max_query_size'], body=query, ignore_unavailable=True, **extra_args)
+            res = self.current_es.search(index=index, body=query)
             logging.debug(str(res))
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
@@ -371,18 +385,27 @@ class ElastAlerter():
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
             return None
 
-        hits = res['aggregations']['filtered']['doc_count']
+        hits = res['hits']['total']
+        elastalert_logger.info('Result hits: %s', hits)
         if hits == 0:
             aggregation_num = 0
         else:
-            aggregations_key = rule['aggs']['aggs_key']
-            aggregation_num = res['aggregations']['filtered'][aggregations_key]['value']
+            aggregation_key = rule['aggs']['aggs_key']
+            aggregation_num = res['aggregations'][aggregation_key]['values']['70.0']
 
         self.num_hits += hits
         lt = rule.get('use_local_time')
         elastalert_logger.info("Queried rule %s from %s to %s: %s hits, aggregation_num is %s" % (rule['name'], pretty_ts(starttime, lt), pretty_ts(endtime, lt), hits, aggregation_num))
 
-        return {'end_time': endtime, 'agg_num': aggregation_num, 'doc_count': hits}
+        return {'end_time': endtime, 'agg_num': aggregation_num, 'doc_count': hits, rule['timestamp_field']: ts_now()}
+
+    def get_query_daily_sent(self, rule, timestamp_field='@timestamp', to_ts_func=dt_to_ts):
+        start = ts_to_startday(ts_now())
+        end = start + datetime.timedelta(1)
+        return {'query': {'filtered': {'filter': {'bool': {'must': [{'range': {timestamp_field: {'gt': to_ts_func(start),
+                                                                                                 'lte': to_ts_func(end)}}},
+                                                                    {'query': {'match': {'alert_sent': {'query': 'true', 'type': 'phrase'}}}},
+                                                                    {'query': {'match': {'rule_name': {'query': rule['name'], 'type': 'phrase'}}}}]}}}}}
 
     def get_hits_count(self, rule, starttime, endtime, index):
         """ Query elasticsearch for the count of results and returns a list of timestamps
